@@ -72,8 +72,10 @@ class MLMD_calculator(HippynnCalculator,ASE_Calculator):
 
         def __init__(self,models,well_params=None,debug_print=False, use_hippynn=True):
             self.use_hippynn = use_hippynn
-            
+
             if self.use_hippynn is True:
+                HippynnCalculator.__init__(self)
+                self.debug_print = debug_print
                 ensemble_graph, _ = hippynn.graphs.make_ensemble(models)
                 self.ensemble_energy = ensemble_graph.node_from_name("ensemble_energy")
                 self.energy_node = self.ensemble_energy.mean
@@ -89,15 +91,16 @@ class MLMD_calculator(HippynnCalculator,ASE_Calculator):
                 ]
                 
                 def calculate(self, atoms=None, properties=["energy"], system_changes=[]):
-                super().calculate(atoms, properties, system_changes)
-                if not self.use_hippynn:
-                    # Use ASE Mixer for calculations
-                    self.results = self.mixer.get_properties(properties, atoms)
-        else:
-            # Use Hippynn for calculations
-            self.calc.calculate(atoms, properties)
-            self.results = self.calc.results
-                
+                    HippynnCalculator.calculate(atoms, properties, system_changes)
+                    # Use Hippynn for calculations
+                    HippynnCalculator.calc.calculate(atoms, properties)
+                    HippynnCalculator.results = self.calc.results
+
+
+
+
+
+            
             if use_hippynn is False:
                 ASE_Calculator.__init__(self)
                 self.debug_print = debug_print
@@ -127,6 +130,7 @@ class MLMD_calculator(HippynnCalculator,ASE_Calculator):
                 if 'forces' in self.implemented_properties:
                     self.implemented_properties.append('forces_stdev_mean')
                     self.implemented_properties.append('forces_stdev_max')
+                    
                 def calculate(self,atoms,properties,system_changes=all_changes):
                     ASE_Calculator.calculate(self, atoms, properties, system_changes)
                     add_properties = properties.copy()
