@@ -1,10 +1,13 @@
 import numpy as np
 import sys
 
-from ase.calculators.calculator import Calculator,all_changes
+from hippynn.interfaces.ase_interface import HippynnCalculator
+
+from ase.calculators.calculator import Calculator as ASE_Calculator
+from ase.calculators.calculator import all_changes
 from ase.calculators.mixing import Mixer
 
-class Well_Potential(Calculator):
+class Well_Potential(ASE_Calculator):
     """
     This calculator applies a restoring force to constrain a series of 
     This is useful for cluster simulations
