@@ -1,13 +1,10 @@
 import numpy as np
 import sys
 
-from hippynn.interfaces.ase_interface import HippynnCalculator
-
-from ase.calculators.calculator import Calculator as ASE_Calculator
-from ase.calculators.calculator import all_changes
+from ase.calculators.calculator import Calculator,all_changes
 from ase.calculators.mixing import Mixer
 
-class Well_Potential(ASE_Calculator):
+class Well_Potential(Calculator):
     """
     This calculator applies a restoring force to constrain a series of 
     This is useful for cluster simulations
@@ -55,96 +52,56 @@ class Well_Potential(ASE_Calculator):
             if current_property in self.zero_properties:
                 self.results[current_property] = np.array(0)
         
-class MLMD_calculator(HippynnCalculator,ASE_Calculator):
+class MLMD_calculator(Calculator):
     """
     This is a calculator that enables MLMD sampling with an ensemble of ML potentials 
     models: a list of ASE calculators that are joined to perform MD. 
     well_params: Inputs for the well potential above, which enables constrained MD simulations
-
-    MLMD calculator that supports ASE calculators and Hippynn ensembles.
-
-    Parameters:
-    - models: List of ASE calculators or a single pre-ensembled calculator (Hippynn).
-    - well_params: Optional parameters for an additional well potential.
-    - debug_print: Whether to print debug information.
-    - use_hippynn: Whether to use Hippynn for uncertainty calculations.
     """
-
-        def __init__(self,models,well_params=None,debug_print=False, use_hippynn=True):
-            self.use_hippynn = use_hippynn
-
-            if self.use_hippynn is True:
-                HippynnCalculator.__init__(self)
-                self.debug_print = debug_print
-                ensemble_graph, _ = hippynn.graphs.make_ensemble(models)
-                self.ensemble_energy = ensemble_graph.node_from_name("ensemble_energy")
-                self.energy_node = self.ensemble_energy.mean
-                self.extra_properties = {
-                    "ens_predictions": self.ensemble_energy.all,
-                    "ens_std": self.ensemble_energy.std,
-                }
-                self.calc = hippynn.interfaces.ase_interface.HippynnCalculator(
-                    energy=self.energy_node, extra_properties=self.extra_properties
-                )
-                self.implemented_properties = [
-                    "energy", "forces", "energy_stdev", "forces_stdev_mean", "forces_stdev_max"
-                ]
-                
-                def calculate(self, atoms=None, properties=["energy"], system_changes=[]):
-                    HippynnCalculator.calculate(atoms, properties, system_changes)
-                    # Use Hippynn for calculations
-                    HippynnCalculator.calc.calculate(atoms, properties)
-                    HippynnCalculator.results = self.calc.results
-
-
-
-
-
+    def __init__(self,models,well_params=None,debug_print=False):
+        Calculator.__init__(self)
+        self.debug_print = debug_print
+        self.N_models = len(models)
+        self.models = models
+        self.weights = [1/self.N_models for i in range(self.N_models)]
+        self.calculator_properties = list(set.intersection(*(set(calc.implemented_properties) for calc in self.models)))
+        if debug_print:
+            print("calculator properties:" + str(self.calculator_properties))
+            sys.stdout.flush()
+        #self.implemented_properties = self.calculator_properties.copy()
+        
+        if not(well_params is None):
+            if 'zero_properties' in well_params:
+                well_params['zero_properties'] = list(set.union(set(well_params['zero_properties']),set(self.calculator_properties)))
+            else: 
+                well_params['zero_properties'] = self.calculator_properties.copy()
+            self.models.append(Well_Potential(**well_params))
+            self.weights.append(1.0)
+        
+        self.mixer = Mixer(self.models,np.array(self.weights))
+        self.implemented_properties = self.mixer.implemented_properties.copy()
+        
             
-            if use_hippynn is False:
-                ASE_Calculator.__init__(self)
-                self.debug_print = debug_print
-                self.N_models = len(models)
-                self.models = models
-                self.weights = [1/self.N_models for i in range(self.N_models)]
-                self.calculator_properties = list(set.intersection(*(set(calc.implemented_properties) for calc in self.models)))
-                if debug_print:
-                    print("calculator properties:" + str(self.calculator_properties))
-                    sys.stdout.flush()
-                #self.implemented_properties = self.calculator_properties.copy()
-                
-                if not(well_params is None):
-                    if 'zero_properties' in well_params:
-                        well_params['zero_properties'] = list(set.union(set(well_params['zero_properties']),set(self.calculator_properties)))
-                    else: 
-                        well_params['zero_properties'] = self.calculator_properties.copy()
-                    self.models.append(Well_Potential(**well_params))
-                    self.weights.append(1.0)
-                
-                self.mixer = Mixer(self.models,np.array(self.weights))
-                self.implemented_properties = self.mixer.implemented_properties.copy()
-                
-                    
-                if 'energy' in self.implemented_properties:
-                    self.implemented_properties.append('energy_stdev')
-                if 'forces' in self.implemented_properties:
-                    self.implemented_properties.append('forces_stdev_mean')
-                    self.implemented_properties.append('forces_stdev_max')
-                    
-                def calculate(self,atoms,properties,system_changes=all_changes):
-                    ASE_Calculator.calculate(self, atoms, properties, system_changes)
-                    add_properties = properties.copy()
-                    if 'energy_stdev' in add_properties:
-                        add_properties.append("energy")
-                    if 'forces_stdev_max' in add_properties or 'forces_stdev_mean' in add_properties:
-                        add_properties.append("forces")
-                    run_properties = list(set.intersection(set(self.calculator_properties),set(add_properties)))
-                    self.atoms = atoms.copy()
-                    self.results = self.mixer.get_properties(run_properties,atoms)
-                    if 'energy_stdev' in properties:
-                        self.results['energy_stdev'] = np.std(self.results['energy_contributions'][:self.N_models])
-                    if 'forces_stdev_mean' in properties or 'forces_stdev_max' in properties:
-                        force_stdev = np.std(np.array(self.results['forces_contributions'][:self.N_models]),axis=0)
-                        self.results['forces_stdev_mean'] = np.mean(np.abs(force_stdev))
-                        self.results['forces_stdev_max'] = np.max(np.abs(force_stdev))
+        if 'energy' in self.implemented_properties:
+            self.implemented_properties.append('energy_stdev')
+        if 'forces' in self.implemented_properties:
+            self.implemented_properties.append('forces_stdev_mean')
+            self.implemented_properties.append('forces_stdev_max')
+    def calculate(self,atoms,properties,system_changes=all_changes):
+        Calculator.calculate(self, atoms, properties, system_changes)
+        add_properties = properties.copy()
+        if 'energy_stdev' in add_properties:
+            add_properties.append("energy")
+        if 'forces_stdev_max' in add_properties or 'forces_stdev_mean' in add_properties:
+            add_properties.append("forces")
+        run_properties = list(set.intersection(set(self.calculator_properties),set(add_properties)))
+        self.atoms = atoms.copy()
+        self.results = self.mixer.get_properties(run_properties,atoms)
+        if 'energy_stdev' in properties:
+            self.results['energy_stdev'] = np.std(self.results['energy_contributions'][:self.N_models])
+        if 'forces_stdev_mean' in properties or 'forces_stdev_max' in properties:
+            force_stdev = np.std(np.array(self.results['forces_contributions'][:self.N_models]),axis=0)
+            self.results['forces_stdev_mean'] = np.mean(np.abs(force_stdev))
+            self.results['forces_stdev_max'] = np.max(np.abs(force_stdev))
+        
         
