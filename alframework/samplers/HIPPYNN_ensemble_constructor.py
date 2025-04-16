@@ -1,11 +1,12 @@
 import numpy as np
 import sys
 
+from ASE_ensemble_constructor import Well_Potential
 from hippynn.interfaces.ase_interface import HippynnCalculator
 
-from ase.calculators.calculator import Calculator as ASE_Calculator
-from ase.calculators.calculator import all_changes
-from ase.calculators.mixing import Mixer
+#from ase.calculators.calculator import Calculator as ASE_Calculator
+#from ase.calculators.calculator import all_changes
+#from ase.calculators.mixing import Mixer
 
 class Well_Potential(ASE_Calculator):
     """
